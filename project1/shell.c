@@ -151,9 +151,7 @@ int main() {
               if (getpid() == 0) kill(getpid(), SIGKILL);
             }
             void timer(int signum) {
-              printf("HERE\n");
-              if (time > 2) kill(getpid(), SIGKILL);
-              alarm(1);
+              kill(getpid(), SIGKILL);
             }
             signal(SIGINT, killer);
             signal(SIGALRM, timer);
@@ -171,8 +169,7 @@ int main() {
                     tokens[lastindex] = NULL;
                 }
 
-                // alarm(1);
-                // while (1) time++;
+                alarm(10);
                 status = execvp(cmd, tokens);
                 
                 if (status == -1) {
