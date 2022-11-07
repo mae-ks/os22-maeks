@@ -14,6 +14,7 @@ void handler(int signum)
 { //signal handler
   printf("Hello World!\n");
   alarms++;
+  signaled = false;
   alarm(1);
 }
 
@@ -31,8 +32,9 @@ int main(int argc, char * argv[])
   alarm(1); //Schedule a SIGALRM for 1 second
 
   time(&start);
-  while(signaled) {
-    pause();
+  while (1) {
+    signaled = true;
+    while (signaled);
     printf("Turing was right!\n");
   }; //busy wait for signal to be delivered
   
