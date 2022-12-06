@@ -6,7 +6,6 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <signal.h>
-#include <string.h>
 
 #define MAX_COMMAND_LINE_LEN 1024
 #define MAX_COMMAND_LINE_ARGS 128
@@ -16,188 +15,280 @@
 char prompt[] = "> ";
 char delimiters[] = " \t\r\n";
 extern char **environ;
-int time = 0;
+int cmd_pid = -1;
+
+void exit_with_code(int code);
+void execute_command(char* arguments[]);
+void remove_quote_from_token(char* token);
+void timeout_process(int time, int pid);
+void sig_handler(int signum);
 
 int main() {
-    // Stores the string typed into the command line.
-    char command_line[MAX_COMMAND_LINE_LEN];
-    char cmd_bak[MAX_COMMAND_LINE_LEN];
-  
-    // Stores the tokenized command line input.
-    char *arguments[MAX_COMMAND_LINE_ARGS];
-    
-    char s[100];
+  // Stores the string typed into the command line.
+  int i;
+  char command_line[MAX_COMMAND_LINE_LEN];
+  char cmd_bak[MAX_COMMAND_LINE_LEN];
+  size_t wd_size = 400;
+  char wd[wd_size];
+  char *wdp;
+  // Stores the tokenized command line input.
+  char *arguments[MAX_COMMAND_LINE_ARGS];
+  signal(SIGINT,sig_handler);
 
-    while (true) {
-      
-        do{ 
-            // Print the shell prompt.
-            printf("%s%s", getcwd(s, 100), prompt);
-            fflush(stdout);
+  while (true) {
 
-            // Read input from stdin and store it in command_line. If there's an
-            // error, exit immediately. (If you want to learn more about this line,
-            // you can Google "man fgets")
-        
-            if ((fgets(command_line, MAX_COMMAND_LINE_LEN, stdin) == NULL) && ferror(stdin)) {
-                fprintf(stderr, "fgets error");
-                exit(0);
-            }
- 
-        }while(command_line[0] == 0x0A);  // while just ENTER pressed
+    do{ 
+        fflush(stdout);
+        // Print the shell prompt.
+        wdp = getcwd(wd, wd_size);
+        printf("%s %s", wdp, prompt);
+        fflush(stdout);
 
-      
-        // If the user input was EOF (ctrl+d), exit the shell.
-        if (feof(stdin)) {
-            printf("\n");
-            fflush(stdout);
-            fflush(stderr);
-            return 0;
+        // Read input from stdin and store it in command_line. If there's an
+        // error, exit immediately. 
+
+        if ((fgets(command_line, MAX_COMMAND_LINE_LEN, stdin) == NULL) && ferror(stdin)) {
+            fprintf(stderr, "fgets error");
+            exit(0);
         }
 
-        // TODO:
-        // 
-        
-        // 0. Modify the prompt to print the current working directory
-			
-        // 1. Tokenize the command line input (split it on whitespace)
-        
-        int count = 0;
-        char *token = strtok(command_line, delimiters);
-        char *tokens[MAX_COMMAND_LINE_ARGS] = {};
+    }while(command_line[0] == 0x0A);  // while just ENTER pressed
 
-        char last[10];
-        int lastindex;
-        
-        while (token != NULL) {
-            if (strncmp("$", token, 1) == 0) {
-                char *copy = token + 1;
-                tokens[count] = getenv(copy);
-            }
-            else {
-                tokens[count] = token;
-            }
 
-            strcpy(last, token);
-            lastindex = count;
-            count++;
-            token = strtok(NULL, delimiters);
-        }
-
-        // 2. Implement Built-In Commands
-        
-        // pwd
-        if (strcmp(tokens[0], "pwd") == 0) {
-            char cwd[1024];
-            if (getcwd(cwd, sizeof(cwd)) == NULL) perror("getcwd() error");
-            else printf("%s\n", cwd);
-        }
-
-        // cd
-        else if (strcmp(tokens[0], "cd") == 0) {
-            if (chdir(tokens[1]) != 0)
-                perror("chdir() error()");
-        }
-
-        // echo
-        else if (strcmp(tokens[0], "echo") == 0) {
-            int i;
-            for (i = 1; i<count; i++) {
-                if (tokens[i] != NULL)
-                printf("%s ", tokens[i]);
-            }
-            printf("\n");
-        }
-        
-        // exit
-        else if (strcmp(tokens[0], "exit") == 0) {
-            exit(1);
-        }
-
-        // env
-        else if (strcmp(tokens[0], "env") == 0) {
-            // if looking for specific var
-            if (tokens[1] != NULL) {
-                if (getenv(tokens[1]) != 0) printf("%s\n", getenv(tokens[1]));
-                else printf("%s\n", tokens[1]);
-            }
-            // if just env
-            else {
-                extern char **environ;
-                char **current;
-                for(current = environ; *current; current++) {
-                    puts(*current);
-                }
-            }
-        }
-
-        // setenv
-        else if (strcmp(tokens[0], "setenv") == 0) {
-            if (tokens[1] != NULL) {
-                char dash[] = "=";
-                char *temp = strtok(tokens[1], dash);
-                char var[20], val[20];
-                strcpy(var, temp);
-                strcpy(val, strtok(NULL, dash));
-                setenv(var, val, 1);
-            }
-        }
-    
-        // 3. Create a child process which will execute the command line input
-
-        else {
-            
-            void killer(int signum) {
-              if (getpid() == 0) kill(getpid(), SIGKILL);
-            }
-            void timer(int signum) {
-              kill(getpid(), SIGKILL);
-            }
-            signal(SIGINT, killer);
-            signal(SIGALRM, timer);
-            
-            int status;
-            pid_t pid;
-            int runinbackground = strcmp(last, "&") == 0;
-            pid = fork();
-
-            if (pid < 0) printf("Error: Fork Op\n");
-            else if (pid == 0) {
-                char cmd[10];
-                strcpy(cmd, tokens[0]);
-                if (runinbackground) {
-                    tokens[lastindex] = NULL;
-                }
-
-                alarm(10);
-                status = execvp(cmd, tokens);
-                
-                if (status == -1) {
-                    printf("execvp() failed: No such file or directory\nAn error occurred.\n");
-                    exit(1);
-                }
-            }
-
-        // 4. The parent process should wait for the child to complete unless its a background process
-            
-            else if (!runinbackground) {
-                wait(&status);
-            }
-        }
-      
-        // Hints (put these into Google):
-        // man fork
-        // man execvp
-        // man wait
-        // man strtok
-        // man environ
-        // man signals
-        
-        // Extra Credit
-        // man dup2
-        // man open
-        // man pipes
+    // If the user input was EOF (ctrl+d), exit the shell.
+    if (feof(stdin)) {
+      exit_with_code(0);
     }
-    // This should never be reached.
-    return -1;
+
+
+    // 1. Tokenize the command line input (split it on whitespace)
+    arguments[0] = strtok(command_line, delimiters);
+    i=0;
+    while(arguments[i] != NULL) {
+      remove_quote_from_token(arguments[i]);
+      //printf("%s\n", arguments[i]);
+      i++;
+      arguments[i]= strtok(NULL, delimiters);
+    }
+    
+    char* last_token = arguments[i-1];
+    bool run_in_background = false;
+    if (strcmp(last_token,"&")==0){
+      run_in_background = true;
+       arguments[i-1] = NULL;
+    }
+    
+    // 2. Implement Built-In Commands
+    if (strcmp(arguments[0],"cd")==0){
+      chdir(arguments[1]);
+    }
+    else if (strcmp(arguments[0],"pwd")==0){
+      printf("%s\n",getcwd(wd, wd_size));
+    }
+    else if (strcmp(arguments[0],"echo")==0){
+      i = 1;
+      while(arguments[i] != NULL){
+        if (arguments[i][0] == '$'){
+          printf("%s ", getenv(arguments[i]+1));
+        }
+        else{
+          printf("%s ", arguments[i]);
+        }
+        i++;
+      }
+      printf("\n");
+    }
+    else if (strcmp(arguments[0],"exit")==0){
+      exit(0);
+    }
+    else if (strcmp(arguments[0],"env")==0){
+      if (arguments[1] != NULL){
+        printf("%s\n",getenv(arguments[1]));
+      }
+      else{
+        char** env= environ;
+        for (; *env; env++)
+        printf("%s\n", *env);
+      }
+    }
+    else if (strcmp(arguments[0],"setenv")==0){
+      char* temp[2];
+      temp[0] = strtok(arguments[1], "=");
+      i=0;
+      while(temp[i] != NULL || i == 2) {
+        i++;
+        temp[i] = strtok(NULL, "=");
+      }
+      if (temp[0] == NULL || temp[1] == NULL){
+        exit_with_code(1);
+      }
+      setenv(temp[0], temp[1], 1);
+    }
+    else{
+      int pid = fork();
+      if (pid == 0){
+        signal(SIGINT, SIG_DFL);
+        execute_command(arguments);
+        exit(0);
+      }
+      else{
+        if (run_in_background){
+          cmd_pid = -1;
+        }
+        else {
+          cmd_pid = pid;
+          int kpid = fork();
+          if (kpid==0){
+            signal(SIGINT, SIG_DFL);
+            timeout_process(10000, pid);
+            exit(0);
+          }
+          else{
+            waitpid(pid, NULL, 0);
+            kill(kpid, SIGINT);
+            waitpid(kpid, NULL, 0);
+          }
+        }
+      }
+      
+    }
+
+  }
+  // This should never be reached.
+  return -1;
+}
+
+void timeout_process(int time, int pid){
+  sleep(time);
+  printf("Foreground process timed out.\n");
+  kill(pid, SIGINT);
+}
+
+void remove_quote_from_token(char* token){
+  bool quotes = false;
+  char first;
+  char last;
+  if (token[0]=='\"' || token[0]=='\''){
+    first = token[0];
+    quotes = true;
+  }
+  if (quotes){
+    int i=0;
+    while (token[i]!='\0'){
+      last = token[i];
+      i++;
+    }
+    if (first == last){ 
+      i=1;
+      while (token[i]!='\0'){
+        token[i-1] = token[i];
+        i++;
+      }
+      token[i-1]='\0';
+      token[i-2]='\0';
+    }
+  }
+   
+}
+
+void execute_command(char* arguments[]){
+  char* args_by_pipe[MAX_COMMAND_LINE_ARGS][MAX_COMMAND_LINE_ARGS];
+  int i = 0;
+  int command_count = 0;
+  int command_token_count = 0;
+  while (arguments[i]!= NULL){
+    if (strcmp(arguments[i],"|")==0){
+      if (command_token_count == 0){
+        printf("Invalid pipe command\n");
+        return;
+      }
+      args_by_pipe[command_count][command_token_count] = NULL;
+      
+      command_count++;
+      command_token_count=0;
+    }
+    else{
+      args_by_pipe[command_count][command_token_count] = arguments[i];
+      command_token_count++;
+    }
+    i++;
+  }
+  
+  int num_pipes = command_count;
+  command_count++;
+  if (num_pipes == 0){
+    execvp(args_by_pipe[0][0],args_by_pipe[0]);
+  }
+  else{
+    int pipes[num_pipes][2];
+    for (i=0;i<num_pipes;i++){
+      pipe(pipes[i]);
+    }
+    int pids[command_count];
+    for (i=0;i<command_count;i++){
+      pids[i]=fork();
+      if (pids[i] == 0){
+        int j;
+        if (i == 0){
+          dup2(pipes[0][1], 1);
+          close(pipes[0][0]);
+          for (j=1; j < num_pipes; j++){
+            close(pipes[j][0]);
+            close(pipes[j][1]);
+          }
+        }
+        else if (i == num_pipes){
+          dup2(pipes[num_pipes-1][0], 0);
+          close(pipes[num_pipes-1][1]);
+          for (j=0; j < num_pipes-1; j++){
+            close(pipes[j][0]);
+            close(pipes[j][1]);
+          }
+        }
+        else{
+          dup2(pipes[i-1][0],0);
+          dup2(pipes[i][1],1);
+          for (j=0; j < num_pipes; j++){
+            if (j== i-1){
+              close(pipes[j][1]);
+            }
+            else if (j == i){
+              close(pipes[j][0]);
+            }
+            else{
+              close(pipes[j][0]);
+              close(pipes[j][1]);
+            }
+          }
+        }
+        execvp(args_by_pipe[i][0],args_by_pipe[i]);
+      }
+      else if (pids[i] < 0){
+        printf("An error occured\n");
+        return;
+      }
+    }
+    for (i=0; i<num_pipes; i++){
+      close(pipes[i][0]);
+      close(pipes[i][1]);
+    }
+    for(i = 0; i < command_count; i++){
+      wait(NULL);
+    }
+    
+  }
+}
+
+void sig_handler(int signum)
+{ 
+  if (cmd_pid != -1){
+    kill(cmd_pid, SIGINT);
+  }
+}
+
+void exit_with_code(int code){
+  printf("\n");
+  fflush(stdout);
+  fflush(stderr);
+  exit(code);
 }
